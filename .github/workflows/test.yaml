@@ -1,0 +1,63 @@
+name: Test
+
+on:
+  workflow_call:
+    inputs:
+      kind:
+        description: Content kind
+        required: true
+        type: string
+      name:
+        description: Content name
+        required: true
+        type: string
+      channel:
+        description: Channel name
+        required: true
+        type: string
+    secrets:
+      session-id:
+        description: Session ID
+        required: true
+      access-token:
+        description: Access token
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        tier: [premium, free]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Install just
+        uses: extractions/setup-just@v3
+        with:
+          just-version: "1"
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        with:
+          version: "1.8.0"
+          force: "true"
+
+      - name: Install labctl
+        run: |
+          curl -sf https://labs.iximiuz.com/cli/install.sh | sh
+          echo "/home/runner/.iximiuz/labctl/bin" >> "$GITHUB_PATH"
+
+      - name: Log in to iximiuz Labs
+        run: labctl auth login --session-id ${{ secrets.session-id }} --access-token ${{ secrets.access-token }}
+
+      - name: Test
+        run: just ${{ inputs.kind }} test ${{ inputs.name }} ${{ inputs.channel }} ${{ matrix.tier }}

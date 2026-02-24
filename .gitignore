@@ -1,0 +1,9 @@
+/.devenv/
+/.direnv/
+
+/_data/bake.json
+
+*.afphoto~lock~
+*.afdesign~lock~
+
+**/dist/

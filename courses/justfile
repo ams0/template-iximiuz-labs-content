@@ -1,0 +1,146 @@
+kind := "course"
+
+import '../.just/content.just'
+
+[private]
+default:
+  @just --list
+
+# run tests for the course
+test name channel="dev" tier="premium": (exists name)
+  #!/usr/bin/env bash
+  set -euo pipefail
+
+  if [[ -d "{{ name }}/modules" ]]; then
+    just test-modules {{ name }} {{ channel }} {{ tier }}
+  elif [[ -d "{{ name }}/lessons" ]]; then
+    just test-lessons {{ name }} {{ channel }} {{ tier }}
+  else
+    echo "Invalid course directory structure"
+    exit 1
+  fi
+
+# run tests for a modular course
+test-modules name channel="dev" tier="premium": (exists name)
+  #!/usr/bin/env bash
+  set -euo pipefail
+
+  if [[ ! -d "{{ name }}/modules" ]]; then
+    echo "Course is not modular"
+    exit 1
+  fi
+
+  for dir in {{ name }}/modules/*/; do
+    just test-module {{ name }} $(basename "${dir%/}") {{ channel }} {{ tier }}
+  done
+
+# run tests for a module of a course
+test-module name module channel="dev" tier="premium": (exists name) (module-exists name module) (_test-lessons name module name+"/modules/"+module channel tier)
+
+# run tests for a lesson of a module of a course
+test-module-lesson name module lesson channel="dev" tier="premium": (exists name) (module-lesson-exists name module lesson) (_test-lesson name module lesson name+"/modules/"+module+"/"+lesson channel tier)
+
+# run tests for the course lessons
+test-lessons name channel="dev" tier="premium": (exists name)
+  #!/usr/bin/env bash
+  set -euo pipefail
+
+  if [[ ! -d "{{ name }}/lessons" ]]; then
+    echo "Course is not simple"
+    exit 1
+  fi
+
+  just _test-lessons {{ name }} "root" "{{ name }}/lessons" {{ channel }} {{ tier }}
+
+# run tests for the course lessons
+test-lesson name lesson channel="dev" tier="premium": (exists name) (lesson-exists name lesson) (_test-lesson name "root" lesson name+"/lessons/"+lesson channel tier)
+  #!/usr/bin/env bash
+  set -euo pipefail
+
+[private]
+_test-lessons name module path channel="dev" tier="premium":
+  #!/usr/bin/env bash
+  set -euo pipefail
+
+  for dir in {{ path }}/*/; do
+    just _test-lesson {{ name }} {{ module }} $(basename "${dir%/}") "${dir%/}" {{ channel }} {{ tier }}
+  done
+
+[private]
+_test-lesson name module lesson path channel="dev" tier="premium":
+  #!/usr/bin/env bash
+  set -euo pipefail
+
+  if ! just has-playground {{ path }}; then
+    exit 0
+  fi
+
+  # Make sure the playground isn't running
+  just stop-lesson {{ name }} {{ module }} {{ lesson }} {{ channel }}
+
+  # Start a new playground
+  just start-lesson {{ name }} {{ module }} {{ lesson }} {{ channel }}
+  trap "[[ \${DEBUG:-} != true ]] && just stop-lesson {{ name }} {{ module }} {{ lesson }} {{ channel }}" EXIT
+
+  sleep 5
+
+  playId=$(just play-id {{ name }} {{ module }} {{ lesson }} {{ channel }})
+
+  # Wait for the playground to be ready
+  labctl playground tasks --kind init --wait $playId
+  # sleep 30
+
+  if [[ -f "{{ path }}/solution/run.sh" ]]; then
+    {{ path }}/solution/run.sh $playId
+  fi
+
+  just check-tasks $playId
+
+# start a lesson playground
+start-lesson name module lesson channel="dev" tier="premium": (run-lesson name channel module lesson "true" tier)
+
+# stop a lesson playground
+stop-lesson name module lesson channel="dev": (run-lesson name channel module lesson "false" "premium")
+
+run-lesson-json := '
+{
+  asFreeTierUser: ($tier != "premium"),
+  modules: {
+    ($module): {
+      lessons: {
+        ($lesson): {
+          started: ($started | toboolean)
+        }
+      }
+    }
+  }
+}
+'
+
+[private]
+run-lesson name channel module lesson started tier: (exists name)
+  @jq -n --arg module {{ module }} --arg lesson {{ lesson }} --arg started {{ started }} --arg tier {{ tier }} '{{ run-lesson-json }}' | labctl api /courses/$(just name {{ name }} {{ channel }})/learning --method PATCH --input - > /dev/null
+
+# resolve the play ID
+@play-id name module lesson channel="dev":
+  labctl playground list -o json | jq -r --arg name $(just name {{ name }} {{ channel }}) --arg path "{{ module }}/{{ lesson }}"  '.[] | select(.courseName == $name and .lessonPath == $path and .status.stateEvents[-1].state == "RUNNING") | .id'
+
+[private]
+[no-exit-message]
+@has-playground path:
+  yq eval --exit-status '.playground.name' {{ path }}/manifest.yaml > /dev/null 2> /dev/null
+
+[private]
+[no-exit-message]
+@module-exists name module:
+  test -d "{{ name }}/modules/{{ module }}" || (echo "{{ style("error") }}Module not found: {{ module }}{{ NORMAL }}" >&2 && exit 1)
+
+[private]
+[no-exit-message]
+@module-lesson-exists name module lesson:
+  test -d "{{ name }}/modules/{{ module }}/{{ lesson }}" || (echo "{{ style("error") }}Lesson not found in module: {{ module }}/{{ lesson }}{{ NORMAL }}" >&2 && exit 1)
+
+[private]
+[no-exit-message]
+@lesson-exists name lesson:
+  test -d "{{ name }}/lessons/{{ lesson }}" || (echo "{{ style("error") }}Lesson not found: {{ lesson }}{{ NORMAL }}" >&2 && exit 1)

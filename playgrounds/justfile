@@ -1,0 +1,105 @@
+export IXIMIUZ_CONTENT_ROOT := env('IXIMIUZ_CONTENT_ROOT', parent_directory(justfile_directory()))
+
+[private]
+default:
+  @just --list
+
+# list playground manifests
+list:
+  @ls -d */ | sed 's|/||'
+
+# generate the final manifest for a playground
+generate name channel="dev": (exists name) (generate-just name)
+  labx generate --template-dir {{ IXIMIUZ_CONTENT_ROOT }}/_templates --data-dir {{ IXIMIUZ_CONTENT_ROOT }}/_data --channel {{ channel }} --path {{ name }} --clear
+
+# build a container image
+build-image name channel="dev" $CHANNEL=channel: (exists name)
+  if just ../.bake/ exists {{ name }}; then just ../.bake/ build {{ name }}; fi
+
+# build a container image and generate the final manifest for a playground
+build name channel="dev": (generate name channel) (build-image name channel)
+
+# push a container image
+push-image name channel="dev" $CHANNEL=channel: (exists name)
+  if just ../.bake/ exists {{ name }}; then just ../.bake/ push {{ name }}; fi
+
+# push a playground manifest
+push-content name channel="dev": (exists name) (generate name channel)
+  labctl playground update --dir {{ name }}/dist/ --force $(just name {{ name }} {{ channel }})
+
+# push a containerd image and a playground manifest
+push name channel="dev": (push-image name channel) (push-content name channel)
+
+# push multiple playgrounds
+pushall channel +names:
+  #!/usr/bin/env bash
+  set -euo pipefail
+
+  for name in $(echo "{{ names }}"); do
+    just push $name {{ channel }}
+  done
+
+# shorthand for "push PLAYGROUND dev"
+dev +names: (pushall "dev" names)
+
+# shorthand for "push PLAYGROUND live"
+release +names: (pushall "live" names)
+
+# push multiple playgrounds to live and dev
+all +names: (dev names) (release names)
+
+# watch the local directory for changes and push them automatically
+watch name channel="dev": (exists name)
+  watchexec just push {{ name }} {{ channel }}
+
+# start a playground
+start name channel="dev": (exists name)
+  labctl playground start --open $(just name {{ name }} {{ channel }})
+
+# run tests for a playground
+test name channel="dev" tier="premium": (exists name)
+  #!/usr/bin/env bash
+  set -euo pipefail
+
+  playground=$(just name {{ name }} {{ channel }})
+
+  startArgs="-q"
+
+  if [[ "{{ tier }}" == "free" ]]; then
+    startArgs="$startArgs --as-free-tier-user"
+  fi
+
+  playId=$(labctl playground start $startArgs $playground)
+  trap "[[ \${DEBUG:-} != true ]] && labctl playground stop $playId" EXIT
+
+  if [[ -f "{{ name }}/tests/run.sh" ]]; then
+    {{ name }}/tests/run.sh $playId
+  elif [[ -f "{{ name }}/tests.sh" ]]; then
+    cat {{ name }}/tests.sh | labctl ssh $playId
+  fi
+
+[private]
+[no-exit-message]
+@exists name:
+  test -d "{{ name }}" || (echo "{{ style("error") }}Playground not found: {{ name }}{{ NORMAL }}" >&2 && exit 1)
+
+[private]
+[no-exit-message]
+@name name channel: (exists name)
+  yq -r '.channels.{{ channel }}.name' {{ name }}/manifest.yaml
+
+[private]
+[no-exit-message]
+@has-tests name:
+  test -f "{{ name }}/tests/run.sh" || (echo "{{ style("error") }}Playground has no tests: {{ name }}{{ NORMAL }}" >&2 && exit 1)
+
+[private]
+@generate-just name:
+  #!/usr/bin/env bash
+  set -euo pipefail
+
+  cd {{ name }}
+
+  if test -f justfile && just -l --list-heading "" --list-prefix "" | grep -q generate; then
+    just generate
+  fi

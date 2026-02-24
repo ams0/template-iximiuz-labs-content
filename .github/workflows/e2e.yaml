@@ -1,0 +1,96 @@
+name: e2e
+
+on:
+  # push:
+  #   branches: [main]
+  # pull_request:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Channel name
+        required: true
+        default: "live"
+        type: choice
+        options:
+          - live
+          - dev
+
+permissions:
+  contents: read
+
+jobs:
+  tutorials:
+    name: Tutorials
+    concurrency:
+      group: tutorial-${{ matrix.name }}
+      cancel-in-progress: false
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        name: []
+    uses: ./.github/workflows/test.yaml
+    with:
+      kind: tutorial
+      name: ${{ matrix.name }}
+      channel: ${{ inputs.channel }}
+    secrets:
+      session-id: ${{ secrets.IXIMIUZ_SESSION_ID }}
+      access-token: ${{ secrets.IXIMIUZ_ACCESS_TOKEN }}
+
+  challenges:
+    name: Challenges
+    concurrency:
+      group: challenge-${{ matrix.name }}
+      cancel-in-progress: false
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        name: []
+    uses: ./.github/workflows/test.yaml
+    with:
+      kind: challenge
+      name: ${{ matrix.name }}
+      channel: ${{ inputs.channel }}
+    secrets:
+      session-id: ${{ secrets.IXIMIUZ_SESSION_ID }}
+      access-token: ${{ secrets.IXIMIUZ_ACCESS_TOKEN }}
+
+  playgrounds:
+    name: Playgrounds
+    concurrency:
+      group: playground-${{ matrix.name }}
+      cancel-in-progress: false
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        name: []
+    uses: ./.github/workflows/test.yaml
+    with:
+      kind: playground
+      name: ${{ matrix.name }}
+      channel: ${{ inputs.channel }}
+    secrets:
+      session-id: ${{ secrets.IXIMIUZ_SESSION_ID }}
+      access-token: ${{ secrets.IXIMIUZ_ACCESS_TOKEN }}
+
+  courses:
+    name: Courses
+    concurrency:
+      group: course-${{ matrix.name }}
+      cancel-in-progress: false
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        name: []
+    uses: ./.github/workflows/test.yaml
+    with:
+      kind: course
+      name: ${{ matrix.name }}
+      channel: ${{ inputs.channel }}
+    secrets:
+      session-id: ${{ secrets.IXIMIUZ_SESSION_ID }}
+      access-token: ${{ secrets.IXIMIUZ_ACCESS_TOKEN }}

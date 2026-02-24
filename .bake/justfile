@@ -1,0 +1,42 @@
+set shell := ["bash", "-c"]
+
+export BUILDX_BAKE_ENTITLEMENTS_FS := "0"
+
+command := "docker buildx bake $(printf -- '--file %s ' {,**/}*.hcl)"
+
+[private]
+default:
+  @just --list
+
+# list all build targets
+list:
+  {{ command }} --list targets
+
+# list all variables
+vars:
+  {{ command }} --list variables
+
+# list all variables as JSON
+vars-json:
+  {{ command }} --list type=variables,format=json
+
+# print the build plan for a targe
+print target:
+  {{ command }} {{ target }} --print
+
+# build a target
+build target:
+  {{ command }} {{ target }}
+
+# build and push a target
+push target:
+  {{ command }} {{ target }} --push
+
+[private]
+[no-exit-message]
+@exists target:
+  {{ command }} --print | jq -e --arg target "{{ target }}" '(.target // {} | has($target)) or (.group // {} | has($target))' > /dev/null
+
+[private]
+@run *ARGS:
+  {{ command }} {{ ARGS }}

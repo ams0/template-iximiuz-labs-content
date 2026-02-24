@@ -1,0 +1,45 @@
+name: e2e One
+
+on:
+  workflow_dispatch:
+    inputs:
+      name:
+        description: Name
+        required: true
+        type: string
+      kind:
+        description: Kind
+        required: true
+        type: choice
+        options:
+          - challenge
+          - course
+          - playground
+          - training
+          - tutorial
+      channel:
+        description: Channel name
+        required: true
+        default: "live"
+        type: choice
+        options:
+          - live
+          - dev
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: "${{ inputs.kind }} (${{ inputs.name }})"
+    concurrency:
+      group: ${{ inputs.kind }}-${{ inputs.name }}
+      cancel-in-progress: false
+    uses: ./.github/workflows/test.yaml
+    with:
+      kind: ${{ inputs.kind }}
+      name: ${{ inputs.name }}
+      channel: ${{ inputs.channel }}
+    secrets:
+      session-id: ${{ secrets.IXIMIUZ_SESSION_ID }}
+      access-token: ${{ secrets.IXIMIUZ_ACCESS_TOKEN }}

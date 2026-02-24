@@ -1,0 +1,8 @@
+kind := "challenge"
+
+import '../.just/content.just'
+import '../.just/simple.just'
+
+[private]
+default:
+  @just --list
